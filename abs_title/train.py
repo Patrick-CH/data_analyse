@@ -1,12 +1,13 @@
 from datetime import datetime
 
 import torch
+from torch import nn
 from torch.utils.data import DataLoader
 
-from dataset import KeyWordDataSet
+from dataset import AbsTitleDataSet
 from transformers import BertTokenizer, BertConfig, BertModel
 
-from keyword_extract.model import KeyModel
+from abs_title.model import KeyModel, Net
 
 MAX_SEN_LEN = 64
 BATCH = 16
@@ -19,22 +20,28 @@ else:
     print('正在使用cpu')
 
 
-def train_one_epoch(epoch_index, optimizer):
+def train_one_epoch(epoch_index, optimizer, loss_fn):
     running_loss = 0.
     last_loss = 0.
 
     for i, data in enumerate(training_loader):
+
         inputs, labels = data
         optimizer.zero_grad()
+        outputs = model(inputs, labels)
+        outputs = outputs.reshape(-1, outputs.shape[-1])  # (N*T, VOCAB)
+        labels = labels.view(-1)  # (N*T,)
+        loss = loss_fn(outputs, labels)
+        if i == 0:
+            print(outputs.size())
+            print(labels.size())
 
-        outputs = model(inputs)
-        # print(outputs, labels)
-        loss = loss_fn(outputs.view(-1, 3), labels.view(-1))
         loss.backward()
+        running_loss += loss.item()
         optimizer.step()
 
-        running_loss += loss.item()
         if i % 100 == 99:
+            torch.cuda.empty_cache()
             last_loss = running_loss / 100  # loss per batch
             print('  batch {} loss: {}'.format(i + 1, last_loss))
             running_loss = 0.
@@ -43,22 +50,14 @@ def train_one_epoch(epoch_index, optimizer):
 
 
 if __name__ == '__main__':
-    train_data = KeyWordDataSet(device=device)
-    val_data = KeyWordDataSet(data_path='D:\workspace\PycharmProjects\data_analyse\data\dev.json', device=device)
+    train_data = AbsTitleDataSet(device=device)
+    val_data = AbsTitleDataSet(data_path='D:\workspace\PycharmProjects\data_analyse\data_abs\dev.json', device=device)
     print(len(val_data), len(train_data))
 
     training_loader = DataLoader(train_data, batch_size=BATCH)
     validation_loader = DataLoader(val_data, batch_size=BATCH)
 
-    model_name = 'bert-base-chinese'
-
-    tokenizer = BertTokenizer.from_pretrained(model_name)
-    model_config = BertConfig.from_pretrained(model_name)
-
-    model_config.output_hidden_states = True
-    model_config.output_attentions = True
-
-    model = KeyModel(config=model_config, n_tag=3)
+    model = Net(device=device, vocab_size=BertConfig.from_pretrained('bert-base-chinese').vocab_size)
     model.to(device=device)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -68,14 +67,14 @@ if __name__ == '__main__':
 
     best_vloss = 1_000_000.
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    loss_fn = torch.nn.CrossEntropyLoss()
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=0)
 
     for epoch in range(EPOCHS):
         print('EPOCH {}:'.format(epoch_number + 1))
 
         # Make sure gradient tracking is on, and do a pass over the data
         model.train(True)
-        avg_loss = train_one_epoch(epoch_number, optimizer)
+        avg_loss = train_one_epoch(epoch_number, optimizer, loss_fn)
 
         # We don't need gradients on to do reporting
         model.train(False)
@@ -83,8 +82,11 @@ if __name__ == '__main__':
         running_vloss = 0.0
         for i, vdata in enumerate(validation_loader):
             vinputs, vlabels = vdata
-            voutputs = model(vinputs)
-            vloss = loss_fn(voutputs.view(-1, 3), vlabels.view(-1))
+            voutputs = model(vinputs, vlabels)
+
+            voutputs = voutputs.reshape(-1, voutputs.shape[-1])  # (N*T, VOCAB)
+            vlabels = vlabels.view(-1)  # (N*T,)
+            vloss = loss_fn(voutputs, vlabels)
             running_vloss += vloss
 
         avg_vloss = running_vloss / len(val_data)
@@ -97,8 +99,3 @@ if __name__ == '__main__':
             torch.save(model.state_dict(), model_path)
 
         epoch_number += 1
-
-    data, label = val_data[0]
-    out = model(data)
-    print(label)
-    print(data)

@@ -1,4 +1,6 @@
 import json
+import math
+
 import pandas as pd
 import jieba
 import seaborn as sns
@@ -20,6 +22,7 @@ if __name__ == '__main__':
         title_in_contents = []
         content_lens = []
         frequency = dict()
+        word_doc_num = dict()
         index_loc = []
 
         for _passage in data:
@@ -37,6 +40,12 @@ if __name__ == '__main__':
                 sentence_lens.append(len(sen))
 
             _token_in_content = 0
+            for _c in set(_title_tokens):
+                if _c in word_doc_num:
+                    word_doc_num[_c] += 1
+                else:
+                    word_doc_num[_c] = 1
+
             for _c in _title_tokens:
                 if _c in frequency:
                     frequency[_c] += 1
@@ -145,15 +154,32 @@ if __name__ == '__main__':
     """
 
     # 词频统计
-    ls = [(k, v) for k, v in frequency.items()]
-    ls.sort(key=lambda x: x[1], reverse=True)
-    words = [x for (x, y) in ls]
-    cnts = [y for (x, y) in ls]
+    stop_words = ['，', '“', '”', '的', ';']
+    for w in stop_words:
+        if w in frequency:
+            frequency.pop(w)
+            word_doc_num.pop(w)
+    tf = dict()
+    idf = dict()
+    tf_idf = dict()
+    len_sum = sum(list(frequency.values()))
+    for k in frequency:
+        tf[k] = frequency[k] / len_sum
+        idf[k] = math.log(len(data) / 1 + word_doc_num[k])
+        tf_idf[k] = tf[k] * idf[k]
+
+    ls = [(k, v) for (k, v) in tf_idf.items()]
+    ls.sort(key=lambda lam: lam[1], reverse=True)
+    words = [k for (k, v) in ls]
+    cnts = [v for (k, v) in ls]
+
+    json.dump(tf_idf, open('tf-idf.json', 'w', encoding='utf-8'), ensure_ascii=False)
 
     """
     ---------- 词频分布(top 20) ----------
     """
     # 设置中文字体和负号正常显示
+    plt.figure(figsize=(8, 4))
     plt.rcParams['font.sans-serif'] = ['SimHei']
     matplotlib.rcParams['font.sans-serif'] = ['SimHei']
     matplotlib.rcParams['axes.unicode_minus'] = False
@@ -162,19 +188,18 @@ if __name__ == '__main__':
     words_20 = words[:20]
     x = range(len(cnts_20))
 
-    rects1 = plt.bar(x, height=cnts_20, width=0.4, alpha=0.8, color='blue', label="Frequency statistics")
-    # plt.ylim(0, 10)  # y轴取值范围
-    plt.ylabel("Frequency")
+    rects1 = plt.bar(x, height=cnts_20, width=0.8, alpha=0.8, color='blue', label="TF-IDF")
+    plt.ylabel("TF-IDF")
 
-    plt.xticks([index + 0.2 for index in x], words_20)
+    plt.xticks(x, words_20)
     plt.xlabel("word")
     plt.title("")
     plt.legend()  # 设置题注
 
-    # 编辑文本
-    for rect in rects1:
-        height = rect.get_height()
-        plt.text(rect.get_x() + rect.get_width() / 2, height, str(height), ha="center", va="bottom")
+    # # 编辑文本
+    # for rect in rects1:
+    #     height = rect.get_height()
+    #     plt.text(rect.get_x() + rect.get_width() / 2, height, str(height), ha="center", va="bottom")
 
     plt.show()
     """

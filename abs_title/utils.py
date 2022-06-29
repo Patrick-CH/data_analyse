@@ -16,13 +16,6 @@ model_config.output_attentions = True
 
 bert_model = BertModel(config=model_config)
 
-bio2id = {'O': 0, 'B': 1, 'I': 2}
-id2bio = ['O', 'B', 'I']
-
-
-def label_id(labels):
-    return [[bio2id[_j] for _j in _i] for _i in labels]
-
 
 def split_text(text: str, max_len=MAX_SEN_LEN) -> List[str]:
     ls = re.split("[;,!，。；？！\n]", text)
@@ -35,6 +28,11 @@ def convert_to_id(texts: List[str]):
     text_tokens = [tokenizer.tokenize(_i) for _i in texts]
     text_ids = [tokenizer.convert_tokens_to_ids(_j) for _j in text_tokens]
     return text_ids
+
+
+def convert_to_token(ids):
+    tokens = [tokenizer.convert_ids_to_tokens(ids)]
+    return tokens
 
 
 def pad_text(texts):
@@ -53,3 +51,7 @@ def convert_to_vec(text_ids: List[int]):
         outputs = bert_model(tokens_tensor)
         encoded_layers = outputs
         print(encoded_layers[0].shape, encoded_layers[1].shape)
+
+
+if __name__ == '__main__':
+    print(tokenizer.pad_token_id)
